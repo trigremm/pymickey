@@ -202,7 +202,6 @@ def run_suite(suite: Dict[str, Any]) -> List[StepResult]:
     tests = suite.get("tests") or []
 
     ctx: Dict[str, Any] = {}
-    # прокидываем config сразу в контекст, чтобы можно было использовать {{base_url}}
     ctx.update(config)
 
     timeout = config.get("timeout", 10.0)
@@ -211,15 +210,36 @@ def run_suite(suite: Dict[str, Any]) -> List[StepResult]:
     results: List[StepResult] = []
 
     with httpx.Client(timeout=timeout) as client:
+        # NEW: сначала пробуем логин
+        login_results = run_login_if_configured(config, ctx, client)
+        results.extend(login_results)
+
         for test in tests:
             test_name = test.get("name", "<unnamed test>")
-            steps = test.get("steps") or []
+            test_demand = test.get("demand") or []
+
+            # Если у теста есть demand и он не выполнен — скипаем ВСЕ шаги
+            demand_msg = None
+            if test_demand:
+                demand_msg = check_demand(test_demand, ctx)
+
             print(f"\n=== TEST: {test_name} ===")
 
+            if demand_msg:
+                # весь тест SKIP
+                res = StepResult(
+                    test_name=test_name,
+                    step_name="__test_setup__",
+                    status="SKIP",
+                    message=demand_msg,
+                )
+                results.append(res)
+                print(f"  ⚪ [SKIP] {res.message}")
+                continue
+
+            steps = test.get("steps") or []
+
             for step_def in steps:
-                # объединяем default_headers + headers из шага на этапе render_value
-                # (мы можем просто добавить base_headers в ctx и использовать в YAML, если хотим)
-                # или сделать примитив: если в request нет headers — подставляем default_headers
                 if "request" in step_def and "headers" not in step_def["request"]:
                     step_def["request"]["headers"] = base_headers.copy()
 
@@ -237,6 +257,47 @@ def run_suite(suite: Dict[str, Any]) -> List[StepResult]:
                 print(line)
                 if res.status in ("FAIL", "ERROR", "SKIP") and res.message:
                     print("     ", res.message.replace("\n", "\n      "))
+
+    return results
+
+def run_login_if_configured(
+    config: Dict[str, Any],
+    ctx: Dict[str, Any],
+    client: httpx.Client,
+) -> List[StepResult]:
+    results: List[StepResult] = []
+
+    auth_conf = config.get("auth") or {}
+    login_def = auth_conf.get("login")
+    if not login_def:
+        return results  # логина не настроено — ничего не делаем
+
+    test_name = "__auth__"
+    step_name = login_def.get("name", "login")
+
+    print("\n=== AUTH: login ===")
+
+    # делаем вид, что это обычный шаг
+    fake_step = {
+        "name": step_name,
+        "request": login_def.get("request"),
+        "expect": login_def.get("expect", {}),
+        "extract": login_def.get("extract", {}),
+    }
+
+    res = run_step(client, test_name, fake_step, ctx)
+    results.append(res)
+
+    status_symbol = {
+        "OK": "✅",
+        "FAIL": "❌",
+        "SKIP": "⚪",
+        "ERROR": "💥",
+    }.get(res.status, res.status)
+
+    print(f"  {status_symbol} {res.step_name} [{res.status}]")
+    if res.status in ("FAIL", "ERROR") and res.message:
+        print("     ", res.message.replace("\n", "\n      "))
 
     return results
 
