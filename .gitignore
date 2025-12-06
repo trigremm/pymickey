@@ -3,3 +3,4 @@
 
 .env.mickey.yaml
 pymickey.egg-info
+__pycache__/
