@@ -24,6 +24,44 @@ def load_suite(path: Path) -> Dict[str, Any]:
 
 
 VAR_PATTERN = re.compile(r"{{\s*(\w+)\s*}}")
+JSON_PATH_PART = re.compile(r"^([a-zA-Z0-9_]+)(\[(\d+)\])?$")
+
+
+def get_json_path_value(body: Any, path: str) -> Any:
+    """
+    Очень простой JSON-path:
+    - 'items' → body['items']
+    - 'items[0]' → body['items'][0]
+    - 'items[0].uid' → body['items'][0]['uid']
+    """
+    current = body
+    for part in path.split("."):
+        m = JSON_PATH_PART.match(part)
+        if not m:
+            raise ValueError(f"Invalid json path part: {part!r} in {path!r}")
+
+        key = m.group(1)
+        idx_str = m.group(3)
+
+        if not isinstance(current, dict) or key not in current:
+            raise ValueError(
+                f"Key '{key}' not found while resolving json path '{path}'"
+            )
+        current = current[key]
+
+        if idx_str is not None:
+            idx = int(idx_str)
+            if not isinstance(current, list):
+                raise ValueError(
+                    f"Value at '{key}' is not a list for json path '{path}'"
+                )
+            if idx < 0 or idx >= len(current):
+                raise ValueError(
+                    f"Index {idx} out of range for '{key}' in json path '{path}'"
+                )
+            current = current[idx]
+
+    return current
 
 
 def render_value(value: Any, ctx: Dict[str, Any]) -> Any:
@@ -153,11 +191,8 @@ def extract_vars(
         if expr.startswith("json."):
             if body is None:
                 body = get_json(resp)
-            path = expr.split(".", 1)[1]
-            # пока поддерживаем только один уровень: json.field
-            if not isinstance(body, dict):
-                raise ValueError("JSON root is not an object for json.* extraction")
-            value = body.get(path)
+            path = expr.split(".", 1)[1]  # "items[0].uid"
+            value = get_json_path_value(body, path)
             ctx[name] = value
             continue
         raise ValueError(
