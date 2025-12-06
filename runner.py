@@ -1,7 +1,7 @@
 #!/usr/bin/env python
-import sys
-import re
 import json
+import re
+import sys
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Union
@@ -29,6 +29,7 @@ VAR_PATTERN = re.compile(r"{{\s*(\w+)\s*}}")
 def render_value(value: Any, ctx: Dict[str, Any]) -> Any:
     """Рекурсивно подставляем {{var}} в строках."""
     if isinstance(value, str):
+
         def repl(match: re.Match) -> str:
             var = match.group(1)
             if var not in ctx:
@@ -75,7 +76,9 @@ def json_field_equals(body: Any, mapping: Dict[str, Any]) -> Optional[str]:
         if field not in body:
             return f"Expected field '{field}' in JSON"
         if body[field] != expected:
-            return f"Field '{field}' mismatch: expected {expected!r}, got {body[field]!r}"
+            return (
+                f"Field '{field}' mismatch: expected {expected!r}, got {body[field]!r}"
+            )
     return None
 
 
@@ -110,7 +113,9 @@ def apply_expect(expect: Dict[str, Any], resp: httpx.Response) -> Optional[str]:
     return None
 
 
-def extract_vars(extract: Dict[str, str], resp: httpx.Response, ctx: Dict[str, Any]) -> None:
+def extract_vars(
+    extract: Dict[str, str], resp: httpx.Response, ctx: Dict[str, Any]
+) -> None:
     body: Any = None
     for name, expr in extract.items():
         if expr == "status":
@@ -130,7 +135,9 @@ def extract_vars(extract: Dict[str, str], resp: httpx.Response, ctx: Dict[str, A
             value = body.get(path)
             ctx[name] = value
             continue
-        raise ValueError(f"Unsupported extract expression '{expr}' for variable '{name}'")
+        raise ValueError(
+            f"Unsupported extract expression '{expr}' for variable '{name}'"
+        )
 
 
 def run_step(
@@ -151,7 +158,9 @@ def run_step(
     # request
     req_def = step_def.get("request")
     if not req_def:
-        return StepResult(test_name, step_name, "ERROR", "Step has no 'request' section")
+        return StepResult(
+            test_name, step_name, "ERROR", "Step has no 'request' section"
+        )
 
     try:
         req_def_rendered = render_value(req_def, ctx)
@@ -169,7 +178,14 @@ def run_step(
     data = req_def_rendered.get("data", None)
 
     try:
-        resp = client.request(method=method, url=url, headers=headers, params=params, json=json_data, data=data)
+        resp = client.request(
+            method=method,
+            url=url,
+            headers=headers,
+            params=params,
+            json=json_data,
+            data=data,
+        )
     except Exception as e:  # noqa: BLE001
         return StepResult(test_name, step_name, "ERROR", f"Request error: {e}")
 
@@ -258,8 +274,6 @@ def run_suite(suite: Dict[str, Any], ctx: Dict[str, Any]) -> List[StepResult]:
                     print("     ", res.message.replace("\n", "\n      "))
 
     return results
-
-
 
 
 def run_login_if_configured(
@@ -359,7 +373,6 @@ def main(argv: List[str]) -> int:
 
     results = run_suite(suite, ctx)
     return print_summary(results)
-
 
 
 if __name__ == "__main__":
