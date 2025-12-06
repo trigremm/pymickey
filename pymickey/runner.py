@@ -208,6 +208,15 @@ def run_step(
 ) -> StepResult:
     step_name = step_def.get("name", "<unnamed step>")
 
+    # --- SKIP rule for step ---
+    if "skip" in step_def and step_def["skip"]:
+        reason = (
+            step_def["skip"]
+            if isinstance(step_def["skip"], str)
+            else "Step skipped by configuration"
+        )
+        return StepResult(test_name, step_name, "SKIP", reason)
+
     # demand
     demand = step_def.get("demand") or []
     if demand:
@@ -353,6 +362,24 @@ def run_suite(suite: Dict[str, Any], ctx: Dict[str, Any]) -> List[StepResult]:
             test_name = test.get("name", "<unnamed test>")
             test_demand = test.get("demand") or []
 
+            # --- SKIP rule for whole test ---
+            if "skip" in test and test["skip"]:
+                reason = (
+                    test["skip"]
+                    if isinstance(test["skip"], str)
+                    else "Test skipped by configuration"
+                )
+                print(f"\n=== TEST: {test_name} ===")
+                res = StepResult(
+                    test_name=test_name,
+                    step_name="__test_skip__",
+                    status="SKIP",
+                    message=reason,
+                )
+                results.append(res)
+                print(f"  ⚪ [SKIP] {reason}")
+                continue
+                
             # Если у теста есть demand и он не выполнен — скипаем ВСЕ шаги
             demand_msg = None
             if test_demand:
