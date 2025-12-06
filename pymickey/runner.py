@@ -189,6 +189,22 @@ def run_step(
     except Exception as e:  # noqa: BLE001
         return StepResult(test_name, step_name, "ERROR", f"Request error: {e}")
 
+    # echo response if requested
+    if step_def.get("echo"):
+        print(f"\n=== RESPONSE: {test_name} :: {step_name} ===")
+        print(f"Status: {resp.status_code}")
+        print("Headers:")
+        for k, v in resp.headers.items():
+            print(f"  {k}: {v}")
+        print("Body:")
+        try:
+            parsed = resp.json()
+            print(json.dumps(parsed, indent=2, ensure_ascii=False))
+        except Exception:
+            # не JSON – печатаем как есть
+            print(resp.text)
+        print("=== END RESPONSE ===\n")
+
     # expect
     expect = step_def.get("expect") or {}
     msg = apply_expect(expect, resp)
