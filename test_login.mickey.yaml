@@ -1,4 +1,5 @@
 config:
+  env_file: "env.mickey.yaml"
   base_url: "{{ base_url }}"
   default_headers:
     Content-Type: "application/json"

@@ -213,69 +213,6 @@ def run_step(
     return StepResult(test_name, step_name, "OK")
 
 
-def run_suite(suite: Dict[str, Any], ctx: Dict[str, Any]) -> List[StepResult]:
-    """
-    ctx сюда уже приходит из main, где мы подмешали env.
-    Здесь НЕЛЬЗЯ его затирать config'ом полностью.
-    """
-    config = suite.get("config") or {}
-    tests = suite.get("tests") or []
-
-    timeout = config.get("timeout", 10.0)
-    base_headers = config.get("default_headers") or {}
-
-    results: List[StepResult] = []
-
-    with httpx.Client(timeout=timeout) as client:
-        # Сначала логин
-        login_results = run_login_if_configured(config, ctx, client)
-        results.extend(login_results)
-
-        for test in tests:
-            test_name = test.get("name", "<unnamed test>")
-            test_demand = test.get("demand") or []
-
-            demand_msg = None
-            if test_demand:
-                demand_msg = check_demand(test_demand, ctx)
-
-            print(f"\n=== TEST: {test_name} ===")
-
-            if demand_msg:
-                res = StepResult(
-                    test_name=test_name,
-                    step_name="__test_setup__",
-                    status="SKIP",
-                    message=demand_msg,
-                )
-                results.append(res)
-                print(f"  ⚪ [SKIP] {res.message}")
-                continue
-
-            steps = test.get("steps") or []
-
-            for step_def in steps:
-                if "request" in step_def and "headers" not in step_def["request"]:
-                    step_def["request"]["headers"] = base_headers.copy()
-
-                res = run_step(client, test_name, step_def, ctx)
-                results.append(res)
-
-                status_symbol = {
-                    "OK": "✅",
-                    "FAIL": "❌",
-                    "SKIP": "⚪",
-                    "ERROR": "💥",
-                }.get(res.status, res.status)
-
-                line = f"  {status_symbol} {res.step_name} [{res.status}]"
-                print(line)
-                if res.status in ("FAIL", "ERROR", "SKIP") and res.message:
-                    print("     ", res.message.replace("\n", "\n      "))
-
-    return results
-
-
 def run_login_if_configured(
     config: Dict[str, Any],
     ctx: Dict[str, Any],
@@ -318,6 +255,71 @@ def run_login_if_configured(
     return results
 
 
+def run_suite(suite: Dict[str, Any], ctx: Dict[str, Any]) -> List[StepResult]:
+    """
+    ctx сюда уже приходит из main, где мы подмешали env.
+    Здесь НЕ затираем ctx config'ом.
+    """
+    config = suite.get("config") or {}
+    tests = suite.get("tests") or []
+
+    timeout = config.get("timeout", 10.0)
+    base_headers = config.get("default_headers") or {}
+
+    results: List[StepResult] = []
+
+    with httpx.Client(timeout=timeout) as client:
+        # сначала пробуем логин
+        login_results = run_login_if_configured(config, ctx, client)
+        results.extend(login_results)
+
+        for test in tests:
+            test_name = test.get("name", "<unnamed test>")
+            test_demand = test.get("demand") or []
+
+            # Если у теста есть demand и он не выполнен — скипаем ВСЕ шаги
+            demand_msg = None
+            if test_demand:
+                demand_msg = check_demand(test_demand, ctx)
+
+            print(f"\n=== TEST: {test_name} ===")
+
+            if demand_msg:
+                # весь тест SKIP
+                res = StepResult(
+                    test_name=test_name,
+                    step_name="__test_setup__",
+                    status="SKIP",
+                    message=demand_msg,
+                )
+                results.append(res)
+                print(f"  ⚪ [SKIP] {res.message}")
+                continue
+
+            steps = test.get("steps") or []
+
+            for step_def in steps:
+                if "request" in step_def and "headers" not in step_def["request"]:
+                    step_def["request"]["headers"] = base_headers.copy()
+
+                res = run_step(client, test_name, step_def, ctx)
+                results.append(res)
+
+                status_symbol = {
+                    "OK": "✅",
+                    "FAIL": "❌",
+                    "SKIP": "⚪",
+                    "ERROR": "💥",
+                }.get(res.status, res.status)
+
+                line = f"  {status_symbol} {res.step_name} [{res.status}]"
+                print(line)
+                if res.status in ("FAIL", "ERROR", "SKIP") and res.message:
+                    print("     ", res.message.replace("\n", "\n      "))
+
+    return results
+
+
 def print_summary(results: List[StepResult]) -> int:
     total = len(results)
     ok = sum(1 for r in results if r.status == "OK")
@@ -352,24 +354,38 @@ def main(argv: List[str]) -> int:
         print(f"File not found: {suite_path}")
         return 1
 
-    # Load suite
     suite = load_suite(suite_path)
+    config = suite.get("config") or {}
 
-    # Load environment file
-    env_ctx = {}
+    ctx: Dict[str, Any] = {}
+
+    # 1) ENV из CLI имеет приоритет
     if args.env:
         env_path = Path(args.env)
         if not env_path.exists():
             print(f"Env file not found: {env_path}")
             return 1
-        env_ctx = load_suite(env_path)
+        print(f"Using env from CLI: {env_path}")
+        ctx.update(load_suite(env_path))
 
-    # Merge config + env into context
-    # env overrides config
-    config = suite.get("config") or {}
-    ctx = {}
-    ctx.update(config)
-    ctx.update(env_ctx)
+    # 2) Если --env не указан, смотрим config.env_file / config.env_files
+    else:
+        # поддержим сразу и одиночный файл, и список
+        env_files: List[str] = []
+
+        if "env_file" in config and config["env_file"]:
+            env_files.append(config["env_file"])
+        if "env_files" in config and config["env_files"]:
+            # ожидаем список строк
+            env_files.extend(config["env_files"])
+
+        for name in env_files:
+            env_path = suite_path.parent / name
+            if env_path.exists():
+                print(f"Using env_file from config: {env_path}")
+                ctx.update(load_suite(env_path))
+            else:
+                print(f"WARNING: env_file declared but not found: {env_path}")
 
     results = run_suite(suite, ctx)
     return print_summary(results)
