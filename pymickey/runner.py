@@ -25,8 +25,13 @@ def load_suite(path: Path) -> Dict[str, Any]:
         return yaml.safe_load(f)
 
 
+# {{ ... }} шаблоны: поддерживаем и переменные, и вызовы функций
 VAR_PATTERN = re.compile(r"{{\s*([^}]+?)\s*}}")
+# JSON path: items[0].uid
 JSON_PATH_PART = re.compile(r"^([a-zA-Z0-9_]+)(\[(\d+)\])?$")
+
+
+# ===== Builtins для шаблонов =====
 
 
 def builtin_randint(args: List[str]) -> str:
@@ -36,10 +41,12 @@ def builtin_randint(args: List[str]) -> str:
 
 
 def builtin_randweekday(args: List[str]) -> str:
+    # например "Sat"
     return datetime.date.today().strftime("%a")
 
 
 def builtin_randmonth(args: List[str]) -> str:
+    # например "Dec"
     return datetime.date.today().strftime("%b")
 
 
@@ -88,6 +95,7 @@ def get_json_path_value(body: Any, path: str) -> Any:
 
 
 def render_value(value: Any, ctx: Dict[str, Any]) -> Any:
+    """Рекурсивно подставляем {{ ... }} в строках, dict и list."""
     if isinstance(value, str):
 
         def repl(match: re.Match) -> str:
@@ -259,6 +267,17 @@ def run_step(
             else "Step skipped by configuration"
         )
         return StepResult(test_name, step_name, "SKIP", reason)
+
+    # --- SET rule: calculate and store variables in ctx ---
+    if "set" in step_def:
+        assigns = step_def["set"]
+        if not isinstance(assigns, dict):
+            return StepResult(test_name, step_name, "ERROR", "'set' must be a mapping")
+        try:
+            for var, template in assigns.items():
+                ctx[var] = render_value(template, ctx)
+        except Exception as e:  # noqa: BLE001
+            return StepResult(test_name, step_name, "ERROR", f"Set error: {e}")
 
     # demand
     demand = step_def.get("demand") or []
