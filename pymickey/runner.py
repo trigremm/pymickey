@@ -1,5 +1,7 @@
 #!/usr/bin/env python
+import datetime
 import json
+import random
 import re
 import sys
 from dataclasses import dataclass
@@ -23,8 +25,29 @@ def load_suite(path: Path) -> Dict[str, Any]:
         return yaml.safe_load(f)
 
 
-VAR_PATTERN = re.compile(r"{{\s*(\w+)\s*}}")
+VAR_PATTERN = re.compile(r"{{\s*([^}]+?)\s*}}")
 JSON_PATH_PART = re.compile(r"^([a-zA-Z0-9_]+)(\[(\d+)\])?$")
+BUILTINS = {
+    "randint": builtin_randint,
+    "randweekday": lambda: builtin_randweekday(),
+    "randmonth": lambda: builtin_randmonth(),
+}
+
+
+def builtin_randint(args: List[str]):
+    if len(args) != 2:
+        raise ValueError("randint requires 2 arguments")
+    return str(random.randint(int(args[0]), int(args[1])))
+
+
+def builtin_randweekday():
+    # возвращает название дня недели, например "Mon"
+    return datetime.date.today().strftime("%a")
+
+
+def builtin_randmonth():
+    # возвращает название месяца, например "Dec"
+    return datetime.date.today().strftime("%b")
 
 
 def get_json_path_value(body: Any, path: str) -> Any:
@@ -65,22 +88,33 @@ def get_json_path_value(body: Any, path: str) -> Any:
 
 
 def render_value(value: Any, ctx: Dict[str, Any]) -> Any:
-    """Рекурсивно подставляем {{var}} в строках."""
     if isinstance(value, str):
 
         def repl(match: re.Match) -> str:
-            var = match.group(1)
-            if var not in ctx:
-                raise KeyError(f"Variable '{var}' is not defined in context")
-            return str(ctx[var])
+            expr = match.group(1).strip()
+
+            # вызов функции с аргументами: randint(100, 999)
+            if "(" in expr and expr.endswith(")"):
+                fname, argstr = expr.split("(", 1)
+                fname = fname.strip()
+                argstr = argstr[:-1]  # remove ")"
+                args = [a.strip() for a in argstr.split(",")] if argstr else []
+
+                if fname not in BUILTINS:
+                    raise KeyError(f"Unknown function '{fname}' in template")
+
+                return str(BUILTINS[fname](args))
+
+            # вызов функции без аргументов: randmonth
+            if expr in BUILTINS:
+                return str(BUILTINS[expr]([]))
+
+            # обычная переменная
+            if expr not in ctx:
+                raise KeyError(f"Variable '{expr}' is not defined in context")
+            return str(ctx[expr])
 
         return VAR_PATTERN.sub(repl, value)
-    elif isinstance(value, dict):
-        return {k: render_value(v, ctx) for k, v in value.items()}
-    elif isinstance(value, list):
-        return [render_value(v, ctx) for v in value]
-    else:
-        return value
 
 
 def check_demand(demand: List[str], ctx: Dict[str, Any]) -> Optional[str]:
@@ -379,7 +413,7 @@ def run_suite(suite: Dict[str, Any], ctx: Dict[str, Any]) -> List[StepResult]:
                 results.append(res)
                 print(f"  ⚪ [SKIP] {reason}")
                 continue
-                
+
             # Если у теста есть demand и он не выполнен — скипаем ВСЕ шаги
             demand_msg = None
             if test_demand:
