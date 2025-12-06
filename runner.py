@@ -197,12 +197,13 @@ def run_step(
     return StepResult(test_name, step_name, "OK")
 
 
-def run_suite(suite: Dict[str, Any]) -> List[StepResult]:
+def run_suite(suite: Dict[str, Any], ctx: Dict[str, Any]) -> List[StepResult]:
+    """
+    ctx сюда уже приходит из main, где мы подмешали env.
+    Здесь НЕЛЬЗЯ его затирать config'ом полностью.
+    """
     config = suite.get("config") or {}
     tests = suite.get("tests") or []
-
-    ctx: Dict[str, Any] = {}
-    ctx.update(config)
 
     timeout = config.get("timeout", 10.0)
     base_headers = config.get("default_headers") or {}
@@ -210,7 +211,7 @@ def run_suite(suite: Dict[str, Any]) -> List[StepResult]:
     results: List[StepResult] = []
 
     with httpx.Client(timeout=timeout) as client:
-        # NEW: сначала пробуем логин
+        # Сначала логин
         login_results = run_login_if_configured(config, ctx, client)
         results.extend(login_results)
 
@@ -218,7 +219,6 @@ def run_suite(suite: Dict[str, Any]) -> List[StepResult]:
             test_name = test.get("name", "<unnamed test>")
             test_demand = test.get("demand") or []
 
-            # Если у теста есть demand и он не выполнен — скипаем ВСЕ шаги
             demand_msg = None
             if test_demand:
                 demand_msg = check_demand(test_demand, ctx)
@@ -226,7 +226,6 @@ def run_suite(suite: Dict[str, Any]) -> List[StepResult]:
             print(f"\n=== TEST: {test_name} ===")
 
             if demand_msg:
-                # весь тест SKIP
                 res = StepResult(
                     test_name=test_name,
                     step_name="__test_setup__",
@@ -259,6 +258,9 @@ def run_suite(suite: Dict[str, Any]) -> List[StepResult]:
                     print("     ", res.message.replace("\n", "\n      "))
 
     return results
+
+
+
 
 def run_login_if_configured(
     config: Dict[str, Any],
@@ -324,18 +326,40 @@ def print_summary(results: List[StepResult]) -> int:
 
 
 def main(argv: List[str]) -> int:
-    if len(argv) < 2:
-        print(f"Usage: {argv[0]} path/to/tests.yaml")
+    import argparse
+
+    parser = argparse.ArgumentParser()
+    parser.add_argument("suite", help="Path to test YAML file")
+    parser.add_argument("--env", help="Path to env YAML file", required=False)
+    args = parser.parse_args()
+
+    suite_path = Path(args.suite)
+    if not suite_path.exists():
+        print(f"File not found: {suite_path}")
         return 1
 
-    path = Path(argv[1])
-    if not path.exists():
-        print(f"File not found: {path}")
-        return 1
+    # Load suite
+    suite = load_suite(suite_path)
 
-    suite = load_suite(path)
-    results = run_suite(suite)
+    # Load environment file
+    env_ctx = {}
+    if args.env:
+        env_path = Path(args.env)
+        if not env_path.exists():
+            print(f"Env file not found: {env_path}")
+            return 1
+        env_ctx = load_suite(env_path)
+
+    # Merge config + env into context
+    # env overrides config
+    config = suite.get("config") or {}
+    ctx = {}
+    ctx.update(config)
+    ctx.update(env_ctx)
+
+    results = run_suite(suite, ctx)
     return print_summary(results)
+
 
 
 if __name__ == "__main__":
