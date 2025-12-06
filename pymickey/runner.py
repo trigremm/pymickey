@@ -91,6 +91,27 @@ def json_has_keys(body: Any, keys: List[str]) -> Optional[str]:
     return None
 
 
+def json_list_len_gte(body: Any, mapping: Dict[str, int]) -> Optional[str]:
+    """
+    Проверяет, что указанные поля в JSON — списки с длиной >= заданной.
+    Пример: {"items": 1} → len(body["items"]) >= 1
+    """
+    if not isinstance(body, dict):
+        return "Expected JSON object at root for 'list_len_gte'"
+    for field, min_len in mapping.items():
+        if field not in body:
+            return f"Expected field '{field}' in JSON for 'list_len_gte'"
+        value = body[field]
+        if not isinstance(value, list):
+            return f"Field '{field}' is not a list for 'list_len_gte'"
+        if len(value) < min_len:
+            return (
+                f"List '{field}' length too short: "
+                f"expected >= {min_len}, got {len(value)}"
+            )
+    return None
+
+
 def apply_expect(expect: Dict[str, Any], resp: httpx.Response) -> Optional[str]:
     # status
     if "status" in expect:
@@ -107,6 +128,10 @@ def apply_expect(expect: Dict[str, Any], resp: httpx.Response) -> Optional[str]:
                 return msg
         if "has_keys" in jexp:
             msg = json_has_keys(body, jexp["has_keys"])
+            if msg:
+                return msg
+        if "list_len_gte" in jexp:
+            msg = json_list_len_gte(body, jexp["list_len_gte"])
             if msg:
                 return msg
 
