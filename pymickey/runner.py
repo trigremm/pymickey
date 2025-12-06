@@ -27,27 +27,27 @@ def load_suite(path: Path) -> Dict[str, Any]:
 
 VAR_PATTERN = re.compile(r"{{\s*([^}]+?)\s*}}")
 JSON_PATH_PART = re.compile(r"^([a-zA-Z0-9_]+)(\[(\d+)\])?$")
-BUILTINS = {
-    "randint": builtin_randint,
-    "randweekday": lambda: builtin_randweekday(),
-    "randmonth": lambda: builtin_randmonth(),
-}
 
 
-def builtin_randint(args: List[str]):
+def builtin_randint(args: List[str]) -> str:
     if len(args) != 2:
         raise ValueError("randint requires 2 arguments")
     return str(random.randint(int(args[0]), int(args[1])))
 
 
-def builtin_randweekday():
-    # возвращает название дня недели, например "Mon"
+def builtin_randweekday(args: List[str]) -> str:
     return datetime.date.today().strftime("%a")
 
 
-def builtin_randmonth():
-    # возвращает название месяца, например "Dec"
+def builtin_randmonth(args: List[str]) -> str:
     return datetime.date.today().strftime("%b")
+
+
+BUILTINS = {
+    "randint": builtin_randint,
+    "randweekday": builtin_randweekday,
+    "randmonth": builtin_randmonth,
+}
 
 
 def get_json_path_value(body: Any, path: str) -> Any:
@@ -115,6 +115,15 @@ def render_value(value: Any, ctx: Dict[str, Any]) -> Any:
             return str(ctx[expr])
 
         return VAR_PATTERN.sub(repl, value)
+
+    elif isinstance(value, dict):
+        return {k: render_value(v, ctx) for k, v in value.items()}
+
+    elif isinstance(value, list):
+        return [render_value(v, ctx) for v in value]
+
+    else:
+        return value
 
 
 def check_demand(demand: List[str], ctx: Dict[str, Any]) -> Optional[str]:
