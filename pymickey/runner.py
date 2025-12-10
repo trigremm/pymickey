@@ -6,7 +6,11 @@ import re
 import sys
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Union
+from typing import Any
+from typing import Dict
+from typing import List
+from typing import Optional
+from typing import Union
 
 import httpx
 import yaml
@@ -74,21 +78,15 @@ def get_json_path_value(body: Any, path: str) -> Any:
         idx_str = m.group(3)
 
         if not isinstance(current, dict) or key not in current:
-            raise ValueError(
-                f"Key '{key}' not found while resolving json path '{path}'"
-            )
+            raise ValueError(f"Key '{key}' not found while resolving json path '{path}'")
         current = current[key]
 
         if idx_str is not None:
             idx = int(idx_str)
             if not isinstance(current, list):
-                raise ValueError(
-                    f"Value at '{key}' is not a list for json path '{path}'"
-                )
+                raise ValueError(f"Value at '{key}' is not a list for json path '{path}'")
             if idx < 0 or idx >= len(current):
-                raise ValueError(
-                    f"Index {idx} out of range for '{key}' in json path '{path}'"
-                )
+                raise ValueError(f"Index {idx} out of range for '{key}' in json path '{path}'")
             current = current[idx]
 
     return current
@@ -165,9 +163,7 @@ def json_field_equals(body: Any, mapping: Dict[str, Any]) -> Optional[str]:
         if field not in body:
             return f"Expected field '{field}' in JSON"
         if body[field] != expected:
-            return (
-                f"Field '{field}' mismatch: expected {expected!r}, got {body[field]!r}"
-            )
+            return f"Field '{field}' mismatch: expected {expected!r}, got {body[field]!r}"
     return None
 
 
@@ -194,10 +190,7 @@ def json_list_len_gte(body: Any, mapping: Dict[str, int]) -> Optional[str]:
         if not isinstance(value, list):
             return f"Field '{field}' is not a list for 'list_len_gte'"
         if len(value) < min_len:
-            return (
-                f"List '{field}' length too short: "
-                f"expected >= {min_len}, got {len(value)}"
-            )
+            return f"List '{field}' length too short: " f"expected >= {min_len}, got {len(value)}"
     return None
 
 
@@ -227,9 +220,7 @@ def apply_expect(expect: Dict[str, Any], resp: httpx.Response) -> Optional[str]:
     return None
 
 
-def extract_vars(
-    extract: Dict[str, str], resp: httpx.Response, ctx: Dict[str, Any]
-) -> None:
+def extract_vars(extract: Dict[str, str], resp: httpx.Response, ctx: Dict[str, Any]) -> None:
     body: Any = None
     for name, expr in extract.items():
         if expr == "status":
@@ -246,9 +237,7 @@ def extract_vars(
             value = get_json_path_value(body, path)
             ctx[name] = value
             continue
-        raise ValueError(
-            f"Unsupported extract expression '{expr}' for variable '{name}'"
-        )
+        raise ValueError(f"Unsupported extract expression '{expr}' for variable '{name}'")
 
 
 def run_step(
@@ -261,11 +250,7 @@ def run_step(
 
     # --- SKIP rule for step ---
     if "skip" in step_def and step_def["skip"]:
-        reason = (
-            step_def["skip"]
-            if isinstance(step_def["skip"], str)
-            else "Step skipped by configuration"
-        )
+        reason = step_def["skip"] if isinstance(step_def["skip"], str) else "Step skipped by configuration"
         return StepResult(test_name, step_name, "SKIP", reason)
 
     # --- SET rule: calculate and store variables in ctx ---
@@ -289,9 +274,7 @@ def run_step(
     # request
     req_def = step_def.get("request")
     if not req_def:
-        return StepResult(
-            test_name, step_name, "ERROR", "Step has no 'request' section"
-        )
+        return StepResult(test_name, step_name, "ERROR", "Step has no 'request' section")
 
     try:
         req_def_rendered = render_value(req_def, ctx)
@@ -426,11 +409,7 @@ def run_suite(suite: Dict[str, Any], ctx: Dict[str, Any]) -> List[StepResult]:
 
             # --- SKIP rule for whole test ---
             if "skip" in test and test["skip"]:
-                reason = (
-                    test["skip"]
-                    if isinstance(test["skip"], str)
-                    else "Test skipped by configuration"
-                )
+                reason = test["skip"] if isinstance(test["skip"], str) else "Test skipped by configuration"
                 print(f"\n=== TEST: {test_name} ===")
                 res = StepResult(
                     test_name=test_name,

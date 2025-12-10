@@ -1,6 +1,7 @@
 .idea
 .vscode
 
-.env.mickey.yaml
 pymickey.egg-info
 __pycache__/
+
+.env.mickey.yaml
