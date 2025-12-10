@@ -70,6 +70,16 @@ def get_json_path_value(body: Any, path: str) -> Any:
     """
     current = body
     for part in path.split("."):
+        # Handle direct array access at start: "[0]"
+        if part.startswith("[") and part.endswith("]"):
+            idx = int(part[1:-1])
+            if not isinstance(current, list):
+                raise ValueError(f"Value is not a list for json path '{path}'")
+            if idx < 0 or idx >= len(current):
+                raise ValueError(f"Index {idx} out of range in json path '{path}'")
+            current = current[idx]
+            continue
+
         m = JSON_PATH_PART.match(part)
         if not m:
             raise ValueError(f"Invalid json path part: {part!r} in {path!r}")
@@ -230,10 +240,16 @@ def extract_vars(extract: Dict[str, str], resp: httpx.Response, ctx: Dict[str, A
             header_name = expr.split(".", 1)[1]
             ctx[name] = resp.headers.get(header_name)
             continue
-        if expr.startswith("json."):
+        if expr.startswith("json.") or expr.startswith("json["):
             if body is None:
                 body = get_json(resp)
-            path = expr.split(".", 1)[1]  # "items[0].uid"
+
+            # Handle both "json.items[0].uid" and "json[0].name"
+            if expr.startswith("json["):
+                path = expr[4:]  # Remove "json" prefix, keep "[0].name"
+            else:
+                path = expr.split(".", 1)[1]  # "items[0].uid"
+
             value = get_json_path_value(body, path)
             ctx[name] = value
             continue

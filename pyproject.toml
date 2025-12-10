@@ -1,6 +1,6 @@
 [project]
 name = "pymickey"
-version = "0.1.2"
+version = "0.1.3"
 description = "Minimal declarative HTTP API testing tool with YAML scenarios"
 readme = "README.md"
 requires-python = ">=3.10"
@@ -20,3 +20,6 @@ pymickey = "pymickey.cli:cli"
 [build-system]
 requires = ["setuptools>=61", "wheel"]
 build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+exclude = ["pymickey_tests*"]
