@@ -1,0 +1,42 @@
+config:
+  env_file: "env.mickey.yaml"
+  default_headers:
+    Content-Type: "application/json"
+
+tests:
+  - name: "User Registration - Success"
+    steps:
+      - name: "Register new user with valid credentials"
+        request:
+          method: POST
+          url: "{{ base_url }}/api/auth/register/"
+          json:
+            email: "{{ test_email }}"
+            password: "11@@qqWW"
+            offer_conditions_acceptance_flag: true
+            company_name: "{{ test_company }}"
+        expect:
+          status: 201
+          json:
+            field_equals:
+              success: true
+            has_keys: ["success", "message", "data"]
+        echo: true
+
+  - name: "User Registration - Missing Email"
+    steps:
+      - name: "Register with missing email"
+        request:
+          method: POST
+          url: "{{ base_url }}/api/auth/register/"
+          json:
+            password: "11@@qqWW"
+            offer_conditions_acceptance_flag: true
+            company_name: "{{ test_company }}"
+        expect:
+          status: 400
+          json:
+            field_equals:
+              success: false
+            has_keys: ["success", "errors"]
+        echo: true

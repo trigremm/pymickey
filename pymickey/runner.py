@@ -142,6 +142,14 @@ def render_value(value: Any, ctx: Dict[str, Any]) -> Any:
         return value
 
 
+def render_env(env: Dict[str, Any], ctx: Dict[str, Any]) -> Dict[str, Any]:
+    rendered: Dict[str, Any] = {}
+    for key, value in env.items():
+        combined = {**ctx, **rendered}
+        rendered[key] = render_value(value, combined)
+    return rendered
+
+
 def check_demand(demand: List[str], ctx: Dict[str, Any]) -> Optional[str]:
     missing = [name for name in demand if ctx.get(name) is None]
     if missing:
@@ -526,7 +534,12 @@ def main(argv: List[str]) -> int:
             print(f"Env file not found: {env_path}")
             return 1
         print(f"Using env from CLI: {env_path}")
-        ctx.update(load_suite(env_path))
+        env_data = load_suite(env_path) or {}
+        try:
+            ctx.update(render_env(env_data, ctx))
+        except Exception as e:  # noqa: BLE001
+            print(f"Env template error in {env_path}: {e}")
+            return 1
 
     # 2) Если --env не указан, смотрим config.env_file / config.env_files
     else:
@@ -543,7 +556,12 @@ def main(argv: List[str]) -> int:
             env_path = suite_path.parent / name
             if env_path.exists():
                 print(f"Using env_file from config: {env_path}")
-                ctx.update(load_suite(env_path))
+                env_data = load_suite(env_path) or {}
+                try:
+                    ctx.update(render_env(env_data, ctx))
+                except Exception as e:  # noqa: BLE001
+                    print(f"Env template error in {env_path}: {e}")
+                    return 1
             else:
                 print(f"WARNING: env_file declared but not found: {env_path}")
 
