@@ -178,10 +178,12 @@ def json_field_equals(body: Any, mapping: Dict[str, Any]) -> Optional[str]:
     if not isinstance(body, dict):
         return "Expected JSON object at root for 'field_equals'"
     for field, expected in mapping.items():
-        if field not in body:
-            return f"Expected field '{field}' in JSON"
-        if body[field] != expected:
-            return f"Field '{field}' mismatch: expected {expected!r}, got {body[field]!r}"
+        try:
+            actual = get_json_path_value(body, field)
+        except ValueError as e:
+            return f"Field path '{field}' error: {e}"
+        if actual != expected:
+            return f"Field '{field}' mismatch: expected {expected!r}, got {actual!r}"
     return None
 
 
