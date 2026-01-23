@@ -390,9 +390,11 @@ def run_login_if_configured(
     # делаем вид, что это обычный шаг
     fake_step = {
         "name": step_name,
+        "set": login_def.get("set", {}),
         "request": login_def.get("request"),
         "expect": login_def.get("expect", {}),
         "extract": login_def.get("extract", {}),
+        "echo": login_def.get("echo", False),
     }
 
     res = run_step(client, test_name, fake_step, ctx)
@@ -466,6 +468,11 @@ def run_suite(suite: Dict[str, Any], ctx: Dict[str, Any]) -> List[StepResult]:
                 results.append(res)
                 print(f"  ⚪ [SKIP] {res.message}")
                 continue
+
+            # Apply test-level set: before running steps
+            test_set = test.get("set") or {}
+            for k, v in test_set.items():
+                ctx[k] = render_value(v, ctx)
 
             steps = test.get("steps") or []
 
