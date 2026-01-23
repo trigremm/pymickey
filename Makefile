@@ -7,3 +7,7 @@ format:
 	isort --force-single-line-imports --line-length 120 .
 	black --line-length 120 .
 	npx prettier --write "**/*.yaml"
+
+install:
+	git pull
+	pip install -e . 

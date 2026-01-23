@@ -332,6 +332,7 @@ def run_step(
     # echo response if requested
     if step_def.get("echo"):
         print(f"\n=== RESPONSE: {test_name} :: {step_name} ===")
+        print(f"Request: {method} {url}")
         print(f"Status: {resp.status_code}")
         print("Headers:")
         for k, v in resp.headers.items():
