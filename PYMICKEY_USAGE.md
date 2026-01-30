@@ -51,6 +51,8 @@ config:
   auth:                               # Optional: runs before all tests
     login:
       name: "Login"
+      set:                            # Optional: define variables before login request
+        login_timestamp: "{{ randint(1000, 9999) }}"
       request:
         method: POST
         url: "{{ base_url }}/api/auth/login/"
@@ -62,11 +64,14 @@ config:
         status: 200
       extract:
         access_token: "json.data.access"
+      echo: false                     # Optional: print response for debugging
 
 tests:
   - name: "Test Name"
     demand: ["access_token"]          # Skip test if variables missing
     skip: false                       # Or skip: "reason string"
+    set:                              # Define variables before steps run
+      test_var: "value"
     steps:
       - name: "Step 1"
         # ... step definition
@@ -115,7 +120,7 @@ steps:
           data.status: "active"       # Nested paths supported
           data.items[0].id: 123       # Array indexing supported
         list_len_gte:
-          data.items: 1               # List must have >= 1 elements
+          items: 1                    # List at root level must have >= 1 elements
 
     # Extract values for subsequent steps
     extract:
@@ -124,8 +129,9 @@ steps:
       status_code: "status"
       auth_header: "header.Authorization"
 
-    # Debug: print full response
+    # Debug: print full request/response
     echo: true
+    # Outputs: Request (method, URL), Status, Headers, Body (JSON formatted if applicable)
 ```
 
 ## Template Syntax
@@ -173,10 +179,10 @@ expect:
       data.user.role: "admin"
       data.items[0].type: "default"
 
-    # Check list minimum length
+    # Check list minimum length (root-level fields only)
     list_len_gte:
       data: 1                    # len(body["data"]) >= 1
-      data.items: 5              # Nested paths work here too
+      items: 5                   # len(body["items"]) >= 5
 ```
 
 ## Extract Patterns
@@ -188,6 +194,10 @@ extract:
   first_item: "json.items[0]"
   nested_value: "json.data.nested.field"
 
+  # Direct array access (when response is an array)
+  first_element: "json[0]"
+  first_name: "json[0].name"
+
   # From HTTP status
   status_code: "status"
 
@@ -197,6 +207,22 @@ extract:
 ```
 
 ## Control Flow
+
+### Test-level Set
+
+Define variables before any steps run:
+
+```yaml
+tests:
+  - name: "Test with variables"
+    set:
+      base_id: "{{ randint(1000, 9999) }}"
+      test_name: "Test-{{ randint(1, 100) }}"
+    steps:
+      - name: "Use test variables"
+        request:
+          url: "{{ base_url }}/api/items/{{ base_id }}/"
+```
 
 ### Skip Rules
 
@@ -230,6 +256,24 @@ steps:
     request: ...
 ```
 
+## Execution Order
+
+### Test Execution Order
+1. Check `skip:` rule (skip entire test if true)
+2. Check `demand:` (skip entire test if variables missing)
+3. Apply `set:` variables to context
+4. Run steps sequentially
+
+### Step Execution Order
+1. Check `skip:` rule
+2. Apply `set:` variables to context
+3. Check `demand:` (skip step if variables missing)
+4. Render request template with variable substitution
+5. Execute HTTP request
+6. Print response if `echo: true`
+7. Validate `expect:` assertions
+8. Extract variables with `extract:`
+
 ## Complete Example
 
 ```yaml
@@ -260,11 +304,13 @@ config:
 tests:
   - name: "CRUD Operations"
     demand: ["access_token"]
+    set:
+      test_suffix: "{{ randint(1000, 9999) }}"
 
     steps:
       - name: "Create item"
         set:
-          item_name: "Test Item {{ randint(1000, 9999) }}"
+          item_name: "Test Item {{ test_suffix }}"
         request:
           method: POST
           url: "{{ base_url }}/api/items/"
@@ -326,10 +372,14 @@ Exit code is `1` if any FAIL or ERROR, otherwise `0`.
 
 2. **Relative env paths**: `env_file` paths are relative to the test file location
 
-3. **Debug with echo**: Add `echo: true` to any step to see full response
+3. **Debug with echo**: Add `echo: true` to any step to see full request/response details
 
 4. **Chain extractions**: Extract values in one step, use them in subsequent steps via `{{ variable }}`
 
 5. **Nested field_equals**: Use dot notation for nested objects: `data.user.email: "test@example.com"`
 
-6. **Array access**: Use bracket notation: `data.items[0].id` or `data.users[2].name`
+6. **Array access**: Use bracket notation: `data.items[0].id` or `json[0].name` for direct array access
+
+7. **Test-level set**: Use `set:` at test level to define variables shared across all steps in that test
+
+8. **list_len_gte limitation**: Only works with root-level fields, not nested paths
