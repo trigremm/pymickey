@@ -316,6 +316,34 @@ def run_step(
     params = req_def_rendered.get("params") or None
     json_data = req_def_rendered.get("json", None)
     data = req_def_rendered.get("data", None)
+    files_def = req_def_rendered.get("files", None)
+
+    # build httpx-compatible files dict: {field: (filename, open_file, content_type)}
+    open_files: List[Any] = []
+    files_param = None
+    if files_def:
+        if not isinstance(files_def, dict):
+            return StepResult(test_name, step_name, "ERROR", "'files' must be a mapping of field: path (or field: {path:, content_type:})")
+        files_param = {}
+        for field, spec in files_def.items():
+            if isinstance(spec, str):
+                file_path = Path(spec)
+                content_type = None
+            elif isinstance(spec, dict):
+                file_path = Path(spec.get("path", ""))
+                content_type = spec.get("content_type")
+            else:
+                return StepResult(test_name, step_name, "ERROR", f"Invalid files spec for field '{field}'")
+            if not file_path.is_absolute():
+                file_path = Path(ctx.get("__suite_dir__", ".")) / file_path
+            if not file_path.exists():
+                return StepResult(test_name, step_name, "ERROR", f"File not found: {file_path}")
+            fh = open(file_path, "rb")  # noqa: SIM115
+            open_files.append(fh)
+            if content_type:
+                files_param[field] = (file_path.name, fh, content_type)
+            else:
+                files_param[field] = (file_path.name, fh)
 
     try:
         resp = client.request(
@@ -325,9 +353,13 @@ def run_step(
             params=params,
             json=json_data,
             data=data,
+            files=files_param,
         )
     except Exception as e:  # noqa: BLE001
         return StepResult(test_name, step_name, "ERROR", f"Request error: {e}")
+    finally:
+        for fh in open_files:
+            fh.close()
 
     # echo response if requested
     if step_def.get("echo"):
@@ -535,7 +567,7 @@ def main(argv: List[str]) -> int:
     suite = load_suite(suite_path)
     config = suite.get("config") or {}
 
-    ctx: Dict[str, Any] = {}
+    ctx: Dict[str, Any] = {"__suite_dir__": str(suite_path.parent.resolve())}
 
     # 1) ENV из CLI имеет приоритет
     if args.env:

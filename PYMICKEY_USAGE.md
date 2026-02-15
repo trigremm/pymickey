@@ -109,6 +109,9 @@ steps:
       # OR form data:
       # data:
       #   field: "value"
+      # OR multipart file upload:
+      # files:
+      #   document: "path/to/file.pdf"
 
     # Response validation
     expect:
@@ -133,6 +136,65 @@ steps:
     echo: true
     # Outputs: Request (method, URL), Status, Headers, Body (JSON formatted if applicable)
 ```
+
+## File Upload (Multipart)
+
+Send multipart/form-data requests with file attachments using the `files` key.
+
+### Simple (path only)
+
+```yaml
+steps:
+  - name: "Upload document"
+    request:
+      method: POST
+      url: "{{ base_url }}/api/upload/"
+      files:
+        document: "fixtures/report.pdf"
+      data:
+        description: "Quarterly report"
+    expect:
+      status: 201
+```
+
+### With explicit content type
+
+```yaml
+steps:
+  - name: "Upload avatar"
+    request:
+      method: POST
+      url: "{{ base_url }}/api/users/{{ user_id }}/avatar/"
+      files:
+        avatar:
+          path: "fixtures/photo.png"
+          content_type: "image/png"
+    expect:
+      status: 200
+```
+
+### Multiple files
+
+```yaml
+steps:
+  - name: "Upload attachments"
+    request:
+      method: POST
+      url: "{{ base_url }}/api/attachments/"
+      files:
+        photo: "fixtures/photo.jpg"
+        document:
+          path: "fixtures/contract.pdf"
+          content_type: "application/pdf"
+      data:
+        category: "legal"
+    expect:
+      status: 201
+```
+
+File paths are relative to the test suite file location. Absolute paths are also supported. Template variables work in file paths (e.g. `"{{ fixture_dir }}/file.pdf"`).
+
+**Note**: `files` can be combined with `data` for mixed multipart fields, but not with `json` (as multipart and JSON body are mutually exclusive).
 
 ## Template Syntax
 
@@ -383,3 +445,5 @@ Exit code is `1` if any FAIL or ERROR, otherwise `0`.
 7. **Test-level set**: Use `set:` at test level to define variables shared across all steps in that test
 
 8. **list_len_gte limitation**: Only works with root-level fields, not nested paths
+
+9. **File uploads**: Use `files` for multipart uploads; combine with `data` for extra form fields. File paths are relative to the test file
