@@ -1,7 +1,9 @@
-.idea
-.vscode
+.idea/
+.vscode/
+.DS_Store
 
-pymickey.egg-info
+pymickey.egg-info/
 __pycache__/
+*.pyc
 
 .env.mickey.yaml
