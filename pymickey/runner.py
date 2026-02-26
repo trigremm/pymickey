@@ -290,6 +290,20 @@ def run_step(
         except Exception as e:  # noqa: BLE001
             return StepResult(test_name, step_name, "ERROR", f"Set error: {e}")
 
+    # --- PROMPT rule: ask user for input interactively ---
+    if "prompt" in step_def:
+        prompts = step_def["prompt"]
+        if not isinstance(prompts, dict):
+            return StepResult(test_name, step_name, "ERROR", "'prompt' must be a mapping")
+        if not sys.stdin.isatty() or ctx.get("__no_interactive__"):
+            return StepResult(test_name, step_name, "SKIP", "Interactive prompt skipped (non-interactive mode)")
+        for var, message in prompts.items():
+            try:
+                value = input(f"  ? {message}: ")
+            except (EOFError, KeyboardInterrupt):
+                return StepResult(test_name, step_name, "SKIP", "User cancelled prompt")
+            ctx[var] = value
+
     # demand
     demand = step_def.get("demand") or []
     if demand:
@@ -557,6 +571,7 @@ def main(argv: List[str]) -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("suite", help="Path to test YAML file")
     parser.add_argument("--env", help="Path to env YAML file", required=False)
+    parser.add_argument("--no-interactive", action="store_true", help="Skip interactive prompt steps")
     args = parser.parse_args()
 
     suite_path = Path(args.suite)
@@ -567,7 +582,10 @@ def main(argv: List[str]) -> int:
     suite = load_suite(suite_path)
     config = suite.get("config") or {}
 
-    ctx: Dict[str, Any] = {"__suite_dir__": str(suite_path.parent.resolve())}
+    ctx: Dict[str, Any] = {
+        "__suite_dir__": str(suite_path.parent.resolve()),
+        "__no_interactive__": args.no_interactive,
+    }
 
     # 1) ENV из CLI имеет приоритет
     if args.env:

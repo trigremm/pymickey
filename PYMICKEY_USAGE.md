@@ -10,6 +10,9 @@ pymickey test_suite.mickey.yaml --env env.mickey.yaml
 
 # Or using config-defined env file
 pymickey test_suite.mickey.yaml
+
+# Skip interactive prompt steps (for CI/pipelines)
+pymickey test_suite.mickey.yaml --no-interactive
 ```
 
 ## File Structure
@@ -90,6 +93,10 @@ steps:
     set:
       random_id: "{{ randint(1000, 9999) }}"
       timestamp: "{{ randweekday }}"
+
+    # Ask user for input (interactive mode only)
+    prompt:
+      verification_code: "Enter the code sent to email"
 
     # Required variables (skip if missing)
     demand: ["access_token", "tenant_id"]
@@ -302,6 +309,49 @@ steps:
     skip: "{{ some_condition }}"
 ```
 
+### Interactive Prompt
+
+Pause execution and ask the user for input. Useful for flows that require external actions (e.g., email verification codes, SMS OTP).
+
+```yaml
+steps:
+  - name: "Register user"
+    request:
+      method: POST
+      url: "{{ base_url }}/api/register/"
+      json:
+        email: "{{ email }}"
+    expect:
+      status: 200
+
+  - name: "Verify email"
+    prompt:
+      verification_code: "Enter the code sent to {{ email }}"
+    request:
+      method: POST
+      url: "{{ base_url }}/api/verify/"
+      json:
+        code: "{{ verification_code }}"
+    expect:
+      status: 200
+```
+
+Multiple values can be prompted in a single step:
+
+```yaml
+prompt:
+  otp_code: "Enter OTP from SMS"
+  captcha: "Enter captcha from the page"
+```
+
+**CI safety**: prompt steps are automatically skipped when:
+- stdin is not a TTY (piped input, CI environments)
+- the `--no-interactive` flag is passed
+
+```bash
+pymickey suite.yaml --no-interactive   # prompt steps get SKIP status
+```
+
 ### Demand (Conditional Execution)
 
 ```yaml
@@ -329,12 +379,13 @@ steps:
 ### Step Execution Order
 1. Check `skip:` rule
 2. Apply `set:` variables to context
-3. Check `demand:` (skip step if variables missing)
-4. Render request template with variable substitution
-5. Execute HTTP request
-6. Print response if `echo: true`
-7. Validate `expect:` assertions
-8. Extract variables with `extract:`
+3. Interactive `prompt:` (ask user for input; skipped in non-interactive mode)
+4. Check `demand:` (skip step if variables missing)
+5. Render request template with variable substitution
+6. Execute HTTP request
+7. Print response if `echo: true`
+8. Validate `expect:` assertions
+9. Extract variables with `extract:`
 
 ## Complete Example
 
@@ -423,7 +474,7 @@ tests:
 |--------|---------|
 | OK | Step passed all validations |
 | FAIL | Assertion failed (status, json validation) |
-| SKIP | Skipped due to `skip: true` or unmet `demand` |
+| SKIP | Skipped due to `skip: true`, unmet `demand`, or non-interactive `prompt` |
 | ERROR | Exception (network error, invalid template, etc.) |
 
 Exit code is `1` if any FAIL or ERROR, otherwise `0`.
@@ -447,3 +498,5 @@ Exit code is `1` if any FAIL or ERROR, otherwise `0`.
 8. **list_len_gte limitation**: Only works with root-level fields, not nested paths
 
 9. **File uploads**: Use `files` for multipart uploads; combine with `data` for extra form fields. File paths are relative to the test file
+
+10. **Interactive prompts**: Use `prompt:` for steps that need manual input (verification codes, OTPs). Use `--no-interactive` in CI to skip them

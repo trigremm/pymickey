@@ -12,6 +12,9 @@ Pymickey is a minimal declarative HTTP API testing tool that uses YAML scenarios
 # Run a test suite
 pymickey test_suite.mickey.yaml --env env.mickey.yaml
 
+# Skip interactive prompts (for CI)
+pymickey test_suite.mickey.yaml --no-interactive
+
 # Alternative runner (direct execution)
 python runner.py test_suite.mickey.yaml --env env.mickey.yaml
 
@@ -42,12 +45,13 @@ This is the main orchestration module (~560 lines). Key functions:
 
 1. Skip rule check (`skip:`)
 2. Set variables (`set:`)
-3. Demand validation (`demand:`)
-4. Template render request
-5. Execute HTTP request
-6. Echo response if enabled (`echo: true`)
-7. Validate expectations (`expect:`)
-8. Extract variables (`extract:`)
+3. Interactive prompt (`prompt:`) — asks user for input, skips in non-interactive mode
+4. Demand validation (`demand:`)
+5. Template render request
+6. Execute HTTP request
+7. Echo response if enabled (`echo: true`)
+8. Validate expectations (`expect:`)
+9. Extract variables (`extract:`)
 
 ### YAML Structure
 
@@ -70,6 +74,8 @@ tests:
       - name: "Step Name"
         set:
           var: "value"
+        prompt:                      # interactive input (skipped in CI)
+          code: "Enter verification code"
         request:
           method: GET
           url: "/endpoint"
