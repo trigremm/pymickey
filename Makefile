@@ -1,13 +1,3 @@
-.PHONY: f format
-
-f: format
-
-format:
-	autoflake --remove-all-unused-imports --remove-unused-variables --in-place --recursive .
-	isort --force-single-line-imports --line-length 120 .
-	black --line-length 120 .
-	npx prettier --write "**/*.yaml"
-
-install:
-	git pull
-	pip install -e . 
+include makefiles/format.mk
+include makefiles/git.mk
+include makefiles/install.mk

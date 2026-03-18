@@ -210,7 +210,7 @@ def json_list_len_gte(body: Any, mapping: Dict[str, int]) -> Optional[str]:
         if not isinstance(value, list):
             return f"Field '{field}' is not a list for 'list_len_gte'"
         if len(value) < min_len:
-            return f"List '{field}' length too short: " f"expected >= {min_len}, got {len(value)}"
+            return f"List '{field}' length too short: expected >= {min_len}, got {len(value)}"
     return None
 
 
@@ -296,7 +296,12 @@ def run_step(
         if not isinstance(prompts, dict):
             return StepResult(test_name, step_name, "ERROR", "'prompt' must be a mapping")
         if not sys.stdin.isatty() or ctx.get("__no_interactive__"):
-            return StepResult(test_name, step_name, "SKIP", "Interactive prompt skipped (non-interactive mode)")
+            return StepResult(
+                test_name,
+                step_name,
+                "SKIP",
+                "Interactive prompt skipped (non-interactive mode)",
+            )
         for var, message in prompts.items():
             try:
                 value = input(f"  ? {message}: ")
@@ -337,7 +342,12 @@ def run_step(
     files_param = None
     if files_def:
         if not isinstance(files_def, dict):
-            return StepResult(test_name, step_name, "ERROR", "'files' must be a mapping of field: path (or field: {path:, content_type:})")
+            return StepResult(
+                test_name,
+                step_name,
+                "ERROR",
+                "'files' must be a mapping of field: path (or field: {path:, content_type:})",
+            )
         files_param = {}
         for field, spec in files_def.items():
             if isinstance(spec, str):
@@ -347,7 +357,12 @@ def run_step(
                 file_path = Path(spec.get("path", ""))
                 content_type = spec.get("content_type")
             else:
-                return StepResult(test_name, step_name, "ERROR", f"Invalid files spec for field '{field}'")
+                return StepResult(
+                    test_name,
+                    step_name,
+                    "ERROR",
+                    f"Invalid files spec for field '{field}'",
+                )
             if not file_path.is_absolute():
                 file_path = Path(ctx.get("__suite_dir__", ".")) / file_path
             if not file_path.exists():
