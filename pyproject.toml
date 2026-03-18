@@ -1,6 +1,6 @@
 [project]
 name = "pymickey"
-version = "0.1.7"
+version = "0.1.8"
 description = "Minimal declarative HTTP API testing tool with YAML scenarios"
 readme = "README.md"
 requires-python = ">=3.10"
@@ -28,7 +28,8 @@ exclude = ["pymickey_tests*"]
 line-length = 120
 
 [tool.ruff.lint]
-select = ["E", "F", "I"]
+select = ["E", "F", "I", "W", "UP", "B", "SIM", "C4", "RUF"]
+ignore = ["RUF002", "RUF003"]
 
 [tool.ruff.lint.isort]
 force-single-line = true

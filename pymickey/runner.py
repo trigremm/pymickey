@@ -7,10 +7,6 @@ import sys
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
-from typing import Dict
-from typing import List
-from typing import Optional
-from typing import Union
 
 import httpx
 import yaml
@@ -24,7 +20,7 @@ class StepResult:
     message: str = ""
 
 
-def load_suite(path: Path) -> Dict[str, Any]:
+def load_suite(path: Path) -> dict[str, Any]:
     with path.open("r", encoding="utf-8") as f:
         return yaml.safe_load(f)
 
@@ -38,18 +34,18 @@ JSON_PATH_PART = re.compile(r"^([a-zA-Z0-9_]+)(\[(\d+)\])?$")
 # ===== Builtins для шаблонов =====
 
 
-def builtin_randint(args: List[str]) -> str:
+def builtin_randint(args: list[str]) -> str:
     if len(args) != 2:
         raise ValueError("randint requires 2 arguments")
     return str(random.randint(int(args[0]), int(args[1])))
 
 
-def builtin_randweekday(args: List[str]) -> str:
+def builtin_randweekday(args: list[str]) -> str:
     # например "Sat"
     return datetime.date.today().strftime("%a")
 
 
-def builtin_randmonth(args: List[str]) -> str:
+def builtin_randmonth(args: list[str]) -> str:
     # например "Dec"
     return datetime.date.today().strftime("%b")
 
@@ -102,7 +98,7 @@ def get_json_path_value(body: Any, path: str) -> Any:
     return current
 
 
-def render_value(value: Any, ctx: Dict[str, Any]) -> Any:
+def render_value(value: Any, ctx: dict[str, Any]) -> Any:
     """Рекурсивно подставляем {{ ... }} в строках, dict и list."""
     if isinstance(value, str):
 
@@ -142,22 +138,22 @@ def render_value(value: Any, ctx: Dict[str, Any]) -> Any:
         return value
 
 
-def render_env(env: Dict[str, Any], ctx: Dict[str, Any]) -> Dict[str, Any]:
-    rendered: Dict[str, Any] = {}
+def render_env(env: dict[str, Any], ctx: dict[str, Any]) -> dict[str, Any]:
+    rendered: dict[str, Any] = {}
     for key, value in env.items():
         combined = {**ctx, **rendered}
         rendered[key] = render_value(value, combined)
     return rendered
 
 
-def check_demand(demand: List[str], ctx: Dict[str, Any]) -> Optional[str]:
+def check_demand(demand: list[str], ctx: dict[str, Any]) -> str | None:
     missing = [name for name in demand if ctx.get(name) is None]
     if missing:
         return f"Demand not satisfied, missing variables: {', '.join(missing)}"
     return None
 
 
-def assert_status(expected: Union[int, List[int]], actual: int) -> Optional[str]:
+def assert_status(expected: int | list[int], actual: int) -> str | None:
     if isinstance(expected, int):
         if actual != expected:
             return f"Expected status {expected}, got {actual}"
@@ -170,11 +166,11 @@ def assert_status(expected: Union[int, List[int]], actual: int) -> Optional[str]
 def get_json(resp: httpx.Response) -> Any:
     try:
         return resp.json()
-    except Exception as e:  # noqa: BLE001
-        raise ValueError(f"Response is not JSON: {e}")
+    except Exception as e:
+        raise ValueError(f"Response is not JSON: {e}") from e
 
 
-def json_field_equals(body: Any, mapping: Dict[str, Any]) -> Optional[str]:
+def json_field_equals(body: Any, mapping: dict[str, Any]) -> str | None:
     if not isinstance(body, dict):
         return "Expected JSON object at root for 'field_equals'"
     for field, expected in mapping.items():
@@ -187,7 +183,7 @@ def json_field_equals(body: Any, mapping: Dict[str, Any]) -> Optional[str]:
     return None
 
 
-def json_has_keys(body: Any, keys: List[str]) -> Optional[str]:
+def json_has_keys(body: Any, keys: list[str]) -> str | None:
     if not isinstance(body, dict):
         return "Expected JSON object at root for 'has_keys'"
     for k in keys:
@@ -196,7 +192,7 @@ def json_has_keys(body: Any, keys: List[str]) -> Optional[str]:
     return None
 
 
-def json_list_len_gte(body: Any, mapping: Dict[str, int]) -> Optional[str]:
+def json_list_len_gte(body: Any, mapping: dict[str, int]) -> str | None:
     """
     Проверяет, что указанные поля в JSON — списки с длиной >= заданной.
     Пример: {"items": 1} → len(body["items"]) >= 1
@@ -214,7 +210,7 @@ def json_list_len_gte(body: Any, mapping: Dict[str, int]) -> Optional[str]:
     return None
 
 
-def apply_expect(expect: Dict[str, Any], resp: httpx.Response) -> Optional[str]:
+def apply_expect(expect: dict[str, Any], resp: httpx.Response) -> str | None:
     # status
     if "status" in expect:
         msg = assert_status(expect["status"], resp.status_code)
@@ -240,7 +236,7 @@ def apply_expect(expect: Dict[str, Any], resp: httpx.Response) -> Optional[str]:
     return None
 
 
-def extract_vars(extract: Dict[str, str], resp: httpx.Response, ctx: Dict[str, Any]) -> None:
+def extract_vars(extract: dict[str, str], resp: httpx.Response, ctx: dict[str, Any]) -> None:
     body: Any = None
     for name, expr in extract.items():
         if expr == "status":
@@ -255,10 +251,7 @@ def extract_vars(extract: Dict[str, str], resp: httpx.Response, ctx: Dict[str, A
                 body = get_json(resp)
 
             # Handle both "json.items[0].uid" and "json[0].name"
-            if expr.startswith("json["):
-                path = expr[4:]  # Remove "json" prefix, keep "[0].name"
-            else:
-                path = expr.split(".", 1)[1]  # "items[0].uid"
+            path = expr[4:] if expr.startswith("json[") else expr.split(".", 1)[1]
 
             value = get_json_path_value(body, path)
             ctx[name] = value
@@ -269,13 +262,13 @@ def extract_vars(extract: Dict[str, str], resp: httpx.Response, ctx: Dict[str, A
 def run_step(
     client: httpx.Client,
     test_name: str,
-    step_def: Dict[str, Any],
-    ctx: Dict[str, Any],
+    step_def: dict[str, Any],
+    ctx: dict[str, Any],
 ) -> StepResult:
     step_name = step_def.get("name", "<unnamed step>")
 
     # --- SKIP rule for step ---
-    if "skip" in step_def and step_def["skip"]:
+    if step_def.get("skip"):
         reason = step_def["skip"] if isinstance(step_def["skip"], str) else "Step skipped by configuration"
         return StepResult(test_name, step_name, "SKIP", reason)
 
@@ -287,7 +280,7 @@ def run_step(
         try:
             for var, template in assigns.items():
                 ctx[var] = render_value(template, ctx)
-        except Exception as e:  # noqa: BLE001
+        except Exception as e:
             return StepResult(test_name, step_name, "ERROR", f"Set error: {e}")
 
     # --- PROMPT rule: ask user for input interactively ---
@@ -338,7 +331,7 @@ def run_step(
     files_def = req_def_rendered.get("files", None)
 
     # build httpx-compatible files dict: {field: (filename, open_file, content_type)}
-    open_files: List[Any] = []
+    open_files: list[Any] = []
     files_param = None
     if files_def:
         if not isinstance(files_def, dict):
@@ -384,7 +377,7 @@ def run_step(
             data=data,
             files=files_param,
         )
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:
         return StepResult(test_name, step_name, "ERROR", f"Request error: {e}")
     finally:
         for fh in open_files:
@@ -425,18 +418,18 @@ def run_step(
     if extract:
         try:
             extract_vars(extract, resp, ctx)
-        except Exception as e:  # noqa: BLE001
+        except Exception as e:
             return StepResult(test_name, step_name, "ERROR", f"Extract error: {e}")
 
     return StepResult(test_name, step_name, "OK")
 
 
 def run_login_if_configured(
-    config: Dict[str, Any],
-    ctx: Dict[str, Any],
+    config: dict[str, Any],
+    ctx: dict[str, Any],
     client: httpx.Client,
-) -> List[StepResult]:
-    results: List[StepResult] = []
+) -> list[StepResult]:
+    results: list[StepResult] = []
 
     auth_conf = config.get("auth") or {}
     login_def = auth_conf.get("login")
@@ -475,7 +468,7 @@ def run_login_if_configured(
     return results
 
 
-def run_suite(suite: Dict[str, Any], ctx: Dict[str, Any]) -> List[StepResult]:
+def run_suite(suite: dict[str, Any], ctx: dict[str, Any]) -> list[StepResult]:
     """
     ctx сюда уже приходит из main, где мы подмешали env.
     Здесь НЕ затираем ctx config'ом.
@@ -486,7 +479,7 @@ def run_suite(suite: Dict[str, Any], ctx: Dict[str, Any]) -> List[StepResult]:
     timeout = config.get("timeout", 10.0)
     base_headers = config.get("default_headers") or {}
 
-    results: List[StepResult] = []
+    results: list[StepResult] = []
 
     with httpx.Client(timeout=timeout) as client:
         # сначала пробуем логин
@@ -498,7 +491,7 @@ def run_suite(suite: Dict[str, Any], ctx: Dict[str, Any]) -> List[StepResult]:
             test_demand = test.get("demand") or []
 
             # --- SKIP rule for whole test ---
-            if "skip" in test and test["skip"]:
+            if test.get("skip"):
                 reason = test["skip"] if isinstance(test["skip"], str) else "Test skipped by configuration"
                 print(f"\n=== TEST: {test_name} ===")
                 res = StepResult(
@@ -559,7 +552,7 @@ def run_suite(suite: Dict[str, Any], ctx: Dict[str, Any]) -> List[StepResult]:
     return results
 
 
-def print_summary(results: List[StepResult]) -> int:
+def print_summary(results: list[StepResult]) -> int:
     total = len(results)
     ok = sum(1 for r in results if r.status == "OK")
     failed = sum(1 for r in results if r.status == "FAIL")
@@ -580,7 +573,7 @@ def print_summary(results: List[StepResult]) -> int:
     return 0
 
 
-def main(argv: List[str]) -> int:
+def main(argv: list[str]) -> int:
     import argparse
 
     parser = argparse.ArgumentParser()
@@ -597,7 +590,7 @@ def main(argv: List[str]) -> int:
     suite = load_suite(suite_path)
     config = suite.get("config") or {}
 
-    ctx: Dict[str, Any] = {
+    ctx: dict[str, Any] = {
         "__suite_dir__": str(suite_path.parent.resolve()),
         "__no_interactive__": args.no_interactive,
     }
@@ -612,18 +605,18 @@ def main(argv: List[str]) -> int:
         env_data = load_suite(env_path) or {}
         try:
             ctx.update(render_env(env_data, ctx))
-        except Exception as e:  # noqa: BLE001
+        except Exception as e:
             print(f"Env template error in {env_path}: {e}")
             return 1
 
     # 2) Если --env не указан, смотрим config.env_file / config.env_files
     else:
         # поддержим сразу и одиночный файл, и список
-        env_files: List[str] = []
+        env_files: list[str] = []
 
-        if "env_file" in config and config["env_file"]:
+        if config.get("env_file"):
             env_files.append(config["env_file"])
-        if "env_files" in config and config["env_files"]:
+        if config.get("env_files"):
             # ожидаем список строк
             env_files.extend(config["env_files"])
 
@@ -634,7 +627,7 @@ def main(argv: List[str]) -> int:
                 env_data = load_suite(env_path) or {}
                 try:
                     ctx.update(render_env(env_data, ctx))
-                except Exception as e:  # noqa: BLE001
+                except Exception as e:
                     print(f"Env template error in {env_path}: {e}")
                     return 1
             else:
