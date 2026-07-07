@@ -102,8 +102,8 @@ def render_value(value: Any, ctx: dict[str, Any]) -> Any:
     """Рекурсивно подставляем {{ ... }} в строках, dict и list."""
     if isinstance(value, str):
 
-        def repl(match: re.Match) -> str:
-            expr = match.group(1).strip()
+        def resolve(expr: str) -> Any:
+            expr = expr.strip()
 
             # вызов функции с аргументами: randint(100, 999)
             if "(" in expr and expr.endswith(")"):
@@ -115,16 +115,26 @@ def render_value(value: Any, ctx: dict[str, Any]) -> Any:
                 if fname not in BUILTINS:
                     raise KeyError(f"Unknown function '{fname}' in template")
 
-                return str(BUILTINS[fname](args))
+                return BUILTINS[fname](args)
 
             # вызов функции без аргументов: randmonth
             if expr in BUILTINS:
-                return str(BUILTINS[expr]([]))
+                return BUILTINS[expr]([])
 
             # обычная переменная
             if expr not in ctx:
                 raise KeyError(f"Variable '{expr}' is not defined in context")
-            return str(ctx[expr])
+            return ctx[expr]
+
+        # если вся строка — единственный токен {{ ... }}, сохраняем исходный тип
+        # значения (int/bool/list/dict), а не приводим к str
+        full = VAR_PATTERN.fullmatch(value)
+        if full:
+            return resolve(full.group(1))
+
+        # интерполяция в более крупную строку: подставляем как str
+        def repl(match: re.Match) -> str:
+            return str(resolve(match.group(1)))
 
         return VAR_PATTERN.sub(repl, value)
 
@@ -401,8 +411,18 @@ def run_step(
         print("=== END RESPONSE ===\n")
 
     # expect
-    expect = step_def.get("expect") or {}
-    msg = apply_expect(expect, resp)
+    # рендерим expect так же, как request, чтобы {{ var }} внутри проверок
+    # сравнивались по значению, а не буквально
+    try:
+        expect = render_value(step_def.get("expect") or {}, ctx)
+    except KeyError as e:
+        return StepResult(test_name, step_name, "ERROR", f"Template error: {e}")
+
+    # apply_expect может кинуть ValueError на не-JSON теле — не роняем весь прогон
+    try:
+        msg = apply_expect(expect, resp)
+    except Exception as e:
+        return StepResult(test_name, step_name, "FAIL", str(e))
     if msg:
         # печатаем кусок ответа для дебага
         snippet = resp.text[:300]
@@ -525,8 +545,19 @@ def run_suite(suite: dict[str, Any], ctx: dict[str, Any]) -> list[StepResult]:
 
             # Apply test-level set: before running steps
             test_set = test.get("set") or {}
-            for k, v in test_set.items():
-                ctx[k] = render_value(v, ctx)
+            try:
+                for k, v in test_set.items():
+                    ctx[k] = render_value(v, ctx)
+            except Exception as e:
+                res = StepResult(
+                    test_name=test_name,
+                    step_name="__test_setup__",
+                    status="ERROR",
+                    message=f"Set error: {e}",
+                )
+                results.append(res)
+                print(f"  💥 [ERROR] {res.message}")
+                continue
 
             steps = test.get("steps") or []
 
