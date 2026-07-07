@@ -488,6 +488,31 @@ def run_login_if_configured(
     return results
 
 
+def apply_default_headers(step_def: dict[str, Any], base_headers: dict[str, Any]) -> None:
+    """
+    Подмешивает дефолтные заголовки из config в request шага (мутирует step_def).
+
+    Правила слияния:
+      * ключ ``headers`` отсутствует    -> берём все дефолтные заголовки;
+      * ``headers`` — непустой словарь   -> мержим: заголовки шага перекрывают
+        одноимённые дефолты, остальные дефолты сохраняются;
+      * ``headers: {}`` (пустой словарь) -> escape hatch: дефолты НЕ подмешиваем,
+        отправляем только то, что задал шаг (то есть ничего).
+    """
+    req = step_def.get("request")
+    if not isinstance(req, dict):
+        return
+    if "headers" not in req:
+        # ключ отсутствует — применяем все дефолтные заголовки
+        req["headers"] = base_headers.copy()
+        return
+    step_headers = req["headers"]
+    if isinstance(step_headers, dict) and step_headers:
+        # непустой — мержим, заголовки шага перекрывают одноимённые дефолты
+        req["headers"] = {**base_headers, **step_headers}
+    # пустой headers: {} — escape hatch: ничего не подмешиваем
+
+
 def run_suite(suite: dict[str, Any], ctx: dict[str, Any]) -> list[StepResult]:
     """
     ctx сюда уже приходит из main, где мы подмешали env.
@@ -562,8 +587,7 @@ def run_suite(suite: dict[str, Any], ctx: dict[str, Any]) -> list[StepResult]:
             steps = test.get("steps") or []
 
             for step_def in steps:
-                if "request" in step_def and "headers" not in step_def["request"]:
-                    step_def["request"]["headers"] = base_headers.copy()
+                apply_default_headers(step_def, base_headers)
 
                 res = run_step(client, test_name, step_def, ctx)
                 results.append(res)
