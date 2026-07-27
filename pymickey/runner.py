@@ -377,6 +377,12 @@ def run_step(
             else:
                 files_param[field] = (file_path.name, fh)
 
+    if files_param and headers:
+        # multipart: httpx must set its own Content-Type with the boundary;
+        # a Content-Type inherited from default_headers (e.g. application/json)
+        # would make the server parse the body as JSON and 422.
+        headers = {k: v for k, v in headers.items() if k.lower() != "content-type"}
+
     try:
         resp = client.request(
             method=method,
