@@ -102,8 +102,8 @@ def render_value(value: Any, ctx: dict[str, Any]) -> Any:
     """Рекурсивно подставляем {{ ... }} в строках, dict и list."""
     if isinstance(value, str):
 
-        def repl(match: re.Match) -> str:
-            expr = match.group(1).strip()
+        def resolve(expr: str) -> Any:
+            expr = expr.strip()
 
             # вызов функции с аргументами: randint(100, 999)
             if "(" in expr and expr.endswith(")"):
@@ -115,16 +115,26 @@ def render_value(value: Any, ctx: dict[str, Any]) -> Any:
                 if fname not in BUILTINS:
                     raise KeyError(f"Unknown function '{fname}' in template")
 
-                return str(BUILTINS[fname](args))
+                return BUILTINS[fname](args)
 
             # вызов функции без аргументов: randmonth
             if expr in BUILTINS:
-                return str(BUILTINS[expr]([]))
+                return BUILTINS[expr]([])
 
             # обычная переменная
             if expr not in ctx:
                 raise KeyError(f"Variable '{expr}' is not defined in context")
-            return str(ctx[expr])
+            return ctx[expr]
+
+        # если вся строка — единственный токен {{ ... }}, сохраняем исходный тип
+        # значения (int/bool/list/dict), а не приводим к str
+        full = VAR_PATTERN.fullmatch(value)
+        if full:
+            return resolve(full.group(1))
+
+        # интерполяция в более крупную строку: подставляем как str
+        def repl(match: re.Match) -> str:
+            return str(resolve(match.group(1)))
 
         return VAR_PATTERN.sub(repl, value)
 
@@ -367,6 +377,12 @@ def run_step(
             else:
                 files_param[field] = (file_path.name, fh)
 
+    if files_param and headers:
+        # multipart: httpx must set its own Content-Type with the boundary;
+        # a Content-Type inherited from default_headers (e.g. application/json)
+        # would make the server parse the body as JSON and 422.
+        headers = {k: v for k, v in headers.items() if k.lower() != "content-type"}
+
     try:
         resp = client.request(
             method=method,
@@ -401,8 +417,18 @@ def run_step(
         print("=== END RESPONSE ===\n")
 
     # expect
-    expect = step_def.get("expect") or {}
-    msg = apply_expect(expect, resp)
+    # рендерим expect так же, как request, чтобы {{ var }} внутри проверок
+    # сравнивались по значению, а не буквально
+    try:
+        expect = render_value(step_def.get("expect") or {}, ctx)
+    except KeyError as e:
+        return StepResult(test_name, step_name, "ERROR", f"Template error: {e}")
+
+    # apply_expect может кинуть ValueError на не-JSON теле — не роняем весь прогон
+    try:
+        msg = apply_expect(expect, resp)
+    except Exception as e:
+        return StepResult(test_name, step_name, "FAIL", str(e))
     if msg:
         # печатаем кусок ответа для дебага
         snippet = resp.text[:300]
@@ -468,6 +494,31 @@ def run_login_if_configured(
     return results
 
 
+def apply_default_headers(step_def: dict[str, Any], base_headers: dict[str, Any]) -> None:
+    """
+    Подмешивает дефолтные заголовки из config в request шага (мутирует step_def).
+
+    Правила слияния:
+      * ключ ``headers`` отсутствует    -> берём все дефолтные заголовки;
+      * ``headers`` — непустой словарь   -> мержим: заголовки шага перекрывают
+        одноимённые дефолты, остальные дефолты сохраняются;
+      * ``headers: {}`` (пустой словарь) -> escape hatch: дефолты НЕ подмешиваем,
+        отправляем только то, что задал шаг (то есть ничего).
+    """
+    req = step_def.get("request")
+    if not isinstance(req, dict):
+        return
+    if "headers" not in req:
+        # ключ отсутствует — применяем все дефолтные заголовки
+        req["headers"] = base_headers.copy()
+        return
+    step_headers = req["headers"]
+    if isinstance(step_headers, dict) and step_headers:
+        # непустой — мержим, заголовки шага перекрывают одноимённые дефолты
+        req["headers"] = {**base_headers, **step_headers}
+    # пустой headers: {} — escape hatch: ничего не подмешиваем
+
+
 def run_suite(suite: dict[str, Any], ctx: dict[str, Any]) -> list[StepResult]:
     """
     ctx сюда уже приходит из main, где мы подмешали env.
@@ -525,14 +576,24 @@ def run_suite(suite: dict[str, Any], ctx: dict[str, Any]) -> list[StepResult]:
 
             # Apply test-level set: before running steps
             test_set = test.get("set") or {}
-            for k, v in test_set.items():
-                ctx[k] = render_value(v, ctx)
+            try:
+                for k, v in test_set.items():
+                    ctx[k] = render_value(v, ctx)
+            except Exception as e:
+                res = StepResult(
+                    test_name=test_name,
+                    step_name="__test_setup__",
+                    status="ERROR",
+                    message=f"Set error: {e}",
+                )
+                results.append(res)
+                print(f"  💥 [ERROR] {res.message}")
+                continue
 
             steps = test.get("steps") or []
 
             for step_def in steps:
-                if "request" in step_def and "headers" not in step_def["request"]:
-                    step_def["request"]["headers"] = base_headers.copy()
+                apply_default_headers(step_def, base_headers)
 
                 res = run_step(client, test_name, step_def, ctx)
                 results.append(res)
