@@ -16,7 +16,7 @@ pymickey test_suite.mickey.yaml --env env.mickey.yaml
 pymickey test_suite.mickey.yaml --no-interactive
 
 # Alternative runner (direct execution)
-python runner.py test_suite.mickey.yaml --env env.mickey.yaml
+python -m pymickey.runner test_suite.mickey.yaml --env env.mickey.yaml
 
 # Format code
 make format   # or: make f
@@ -26,19 +26,19 @@ make format   # or: make f
 
 ### Core Module: `pymickey/runner.py`
 
-This is the main orchestration module (~560 lines). Key functions:
+This is the main orchestration module. Key functions:
 
-- **`main()`** (line 509): Entry point - parses CLI args, loads YAML files, runs suite
-- **`run_suite()`** (line 405): Executes all tests, manages httpx.Client and authentication
-- **`run_step()`** (line 254): Executes a single step - request, expect, extract lifecycle
-- **`render_value()`** (line 97): Recursively processes `{{ variable }}` templates in strings/dicts/lists
-- **`extract_vars()`** (line 230): Extracts values from responses into context (`status`, `header.X-Token`, `json.path[0].field`)
-- **`apply_expect()`** (line 204): Validates response against expectations
+- **`main()`**: Entry point - parses CLI args, loads YAML files, runs suite
+- **`run_suite()`**: Executes all tests, manages httpx.Client and authentication
+- **`run_step()`**: Executes a single step - request, expect, extract lifecycle
+- **`render_value()`**: Recursively processes `{{ variable }}` templates in strings/dicts/lists
+- **`extract_vars()`**: Extracts values from responses into context (`status`, `header.X-Token`, `json.path[0].field`)
+- **`apply_expect()`**: Validates response against expectations
 
 ### Template System
 
 - Pattern: `{{ variable }}` or `{{ function(args) }}`
-- Built-in functions (lines 34-57): `randint(min, max)`, `randweekday()`, `randmonth()`
+- Built-in functions: `randint(min, max)`, `randweekday()`, `randmonth()`
 - JSON path navigation supports array indexing: `items[0].uid`
 
 ### Step Execution Order
@@ -80,6 +80,7 @@ tests:
           method: GET
           url: "/endpoint"
           json: {}
+          files: {}              # multipart upload, see PYMICKEY_USAGE.md
         expect:
           status: 200            # or [200, 201]
           json:
