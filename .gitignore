@@ -6,4 +6,6 @@ pymickey.egg-info/
 __pycache__/
 *.pyc
 
+# real env files, any directory (env.sample.mickey.yaml stays tracked)
+env.mickey.yaml
 .env.mickey.yaml
